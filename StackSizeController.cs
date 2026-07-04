@@ -31,6 +31,11 @@ using UnityEngine;
 //   3. ItemSearchCommand / ListCategoryItemsCommand now use GetVanillaStackSize()
 //      instead of indexing _vanillaDefaults directly, which threw
 //      KeyNotFoundException for any item missing from the defaults file.
+//
+//   4. Additional null checks for those two commands, incorporating PR #27 by
+//      IsaiahPetrichor: guard displayName/displayDescription (null on some item
+//      definitions) in ItemSearchCommand, and guard the CategoryStackMultipliers
+//      lookup with ContainsKey in ListCategoryItemsCommand.
 // ---------------------------------------------------------------------------
 
 namespace Oxide.Plugins
@@ -437,9 +442,12 @@ namespace Oxide.Plugins
                     string.Format(GetMessage("NotEnoughArguments", player.Id), 1));
             }
 
+            // Patch (4.1.4, from PR #27 by IsaiahPetrichor): null-guard displayName /
+            // displayDescription, which are null on some item definitions and were
+            // throwing NullReferenceException and making this command unusable.
             List<ItemDefinition> itemDefinitions = ItemManager.itemList.Where(itemDefinition =>
-                    itemDefinition.displayName.english.Contains(args[0]) ||
-                    itemDefinition.displayDescription.english.Contains(args[0]) ||
+                    (itemDefinition.displayName?.english != null && itemDefinition.displayName.english.Contains(args[0])) ||
+                    (itemDefinition.displayDescription?.english != null && itemDefinition.displayDescription.english.Contains(args[0])) ||
                     itemDefinition.shortname.Equals(args[0]) ||
                     itemDefinition.shortname.Contains(args[0]))
                 .ToList();
@@ -489,10 +497,15 @@ namespace Oxide.Plugins
             {
                 // Patch (4.1.4): use GetVanillaStackSize() so items missing from the
                 // defaults file don't throw KeyNotFoundException.
+                // Category-multiplier ContainsKey guard from PR #27 by IsaiahPetrichor.
+                float categoryMultiplier = _config.CategoryStackMultipliers.ContainsKey(itemDefinition.category.ToString())
+                    ? _config.CategoryStackMultipliers[itemDefinition.category.ToString()]
+                    : 1f;
+
                 output.AddRow(itemDefinition.itemid.ToString(), itemDefinition.shortname,
                     itemDefinition.category.ToString(), GetVanillaStackSize(itemDefinition).ToString("N0"),
                     Mathf.Clamp(GetStackSize(itemDefinition), 0, int.MaxValue).ToString("N0"),
-                    _config.CategoryStackMultipliers[itemDefinition.category.ToString()].ToString());
+                    categoryMultiplier.ToString());
             }
 
             player.Reply(output.ToString());
